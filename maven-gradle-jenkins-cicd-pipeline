@@ -1,0 +1,85 @@
+pipeline {
+    agent any 
+    tools{
+      maven 'maven3'
+		  gradle 'gradle'
+    }
+    parameters {
+        choice(
+            choices: ['maven', 'gradle'],
+            description: 'Select your java build tools',
+            name: 'javaBuildTool'
+        )
+        string(name: 'myBranch', defaultValue: 'main', description: 'Enter the Branch Name')
+        string(name: 'sshKeyPath', defaultValue: '/home/ec2/', description: 'Enter your ssh key path')
+        string(name: 'remoteIP', defaultValue: '192.168.1.1', description: 'Enter the remote IP address')
+    }
+    stages {
+/*        stage('Tool Installation') {
+            steps {
+                script {
+                    if (params.javaBuildTool == 'maven') {
+                        tool name: 'maven3', type: 'maven'
+                    } else if (params.javaBuildTool == 'gradle') {
+                        tool name: 'gradle', type: 'gradle'
+                    }
+                }
+            }
+        }*/
+        stage("Git Checkout") {
+            steps {
+                git branch: "${params.myBranch}", changelog: false, poll: false, url: 'https://github.com/imdkamrul20/simple-gradle-java-app.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    if (params.javaBuildTool == 'maven') {
+                        sh 'mvn clean install'
+                    } else if (params.javaBuildTool == 'gradle') {
+                        sh 'gradle clean build'
+                    }
+                }
+            }
+        }
+/*        stage('Deploy on Application Machine') {
+            steps {
+                script {
+                    if (params.javaBuildTool == 'maven') {
+                        sh 'nohup java -jar target/spring-boot-maven-jib-example.jar > nohup.out 2>&1 &'
+                    } else if (params.javaBuildTool == 'gradle') {
+                        sh 'nohup java -jar build/libs/spring-boot-maven-jib-example.jar > nohup.out 2>&1 &'
+                    }
+                }
+            }
+        }	*/	
+        stage('Copy file to Application server') {
+            steps {
+                script {
+                    if (params.javaBuildTool == 'maven') {
+                        sh "scp -i ${params.sshKeyPath} /opt/jenkins_WORKSHOP/spring-boot-simple-web.jar admin@${params.remoteIP}:/app/archive/testApp/"
+                    } else if (params.javaBuildTool == 'gradle') {
+                        sh "scp -i ${params.sshKeyPath} /opt/jenkins_WORKSHOP/spring-boot-simple-web.jar admin@${params.remoteIP}:/app/archive/testApp/"
+                    }
+                }
+            }
+        }		
+		stage("Deploy") {
+			steps {
+				script {
+					def remoteCommand = '''
+						cd /app/archive/testApp/
+						if [ "${params.javaBuildTool}" == "maven" ]; then
+							nohup java -jar target/spring-boot-maven-jib-example.jar >> nohup.out 2>&1 &
+						elif [ "${params.javaBuildTool}" == "gradle" ]; then
+							nohup java -jar build/libs/spring-boot-maven-jib-example.jar >> nohup.out 2>&1 &
+						fi
+					'''
+					sh "ssh -i ${params.sshKeyPath} admin@${params.remoteIP} '${remoteCommand}'"
+				}
+			}
+		}
+
+    }
+}
